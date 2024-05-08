@@ -12,3 +12,18 @@ The data downloaded was specifically filtered for wells within the 100-HR-D Area
 
 This repository comes with results on the target well 199-D5-127, but the script will automatically create new directories under the target well's name used at runtime.
 There, contribution and prediction results are saved.
+
+Environment Requirements:
+
+The scripts are confirmed running on a 64 bit windows machine with a Tesla T4 GPU and Python 3.10.6.
+The environment_requirments folder has two requirments list. One for conda and one for pip. Import the conda envirmonment first with 
+
+conda create --name myenv --file environment_requirements/conda_requirements.txt
+
+then install the remaining pip packages from within the newly created conda environment with
+
+conda activate myenv
+
+pip install -r environment_requirements/pip_requirements.txt
+
+You should be set to run the scripts now.
