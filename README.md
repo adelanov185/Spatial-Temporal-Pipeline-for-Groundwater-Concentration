@@ -13,6 +13,8 @@ The data downloaded was specifically filtered for wells within the 100-HR-D Area
 This repository comes with results on the target well 199-D5-127, but the script will automatically create new directories under the target well's name used at runtime.
 There, contribution and prediction results are saved.
 
+To generate predictions using TabTransformer, navigate to the TabTransformer directory and call the TabTransformerModeling.py script instead.
+
 Environment Requirements:
 
 The scripts are confirmed running on a 64 bit windows machine with a Tesla T4 GPU and Python 3.10.6.
