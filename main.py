@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from model import LSTM_Model, CNN_Model, plot_prediction, plot_links
 import shap
@@ -98,7 +99,7 @@ if date2 > data.index[-1]:
 data = data_interpolation(data, date1, date2, rollingWindow=45, feature='Concentration')
 
 if specific_well not in data.columns:
-    raise Exception(specific_well + ' not available after processing. Here is a list of available wells: ' + str(data.columns))
+    raise Exception(specific_well + ' not available after processing. Here is a list of available wells: ' + str(list(data.columns)))
 
 y_raw = copy.deepcopy(data[specific_well])
 Xx = data.drop(columns=[specific_well], inplace=False)
