@@ -17,7 +17,6 @@ from datetime import datetime, timedelta
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from model import LSTM_Model, CNN_Model, plot_prediction, plot_links
 import shap
@@ -26,7 +25,7 @@ import shap
 parser = argparse.ArgumentParser(description="Modeling and explanation pipeline for \"Spatial-Temporal Analysis of Groundwater Well Features from Neural Network Prediction of Hexavalent Chromium Concentration\".")
 parser.add_argument("-t", "--target", help = "Name of target well to forecast and explain. Target has to be available in the data after processing.", required=True)
 parser.add_argument("-s", "--start", help = "Start date of data to be modeled (in Year-Month-Day format). If not available, will pick the earliest date.", required=True)
-parser.add_argument("-e", "--end", help = "End date of data to be modeled (in Year-Month-Day format). If not available, will pick the latest date.", required=False)
+parser.add_argument("-e", "--end", help = "End date of data to be modeled (in Year-Month-Day format). If not available, will pick the latest date.", required=True)
 parsed = parser.parse_args()
 
 date1 = parsed.start
@@ -202,6 +201,10 @@ explainer, shap_values = shapXAI(model, x_train_scaled, x_test_scaled)
 shap.summary_plot(shap_values.sum(axis=1), plot_type='bar', feature_names=features, show=False)
 plt.savefig(directoryName + 'shap_feature_importance')
 
+#%% Save Predicted Time Series and SHAP Values
+y_test_pred_comparison.to_csv(directoryName + 'predicted_test.csv')
+np.save(directoryName + 'shap_values', shap_values)
+
 #%% SHAP Deltas
 def processContributions(shap_values):
     deltas = []
@@ -218,6 +221,30 @@ def processContributions(shap_values):
 
 deltas = processContributions(shap_values)
 
+def plot_deltas(deltas, y_test_pred_comparison, features):
+    # Use prediction comparison DataFrame's index for x-axis since it already has the testing dates included. 
+    # We don't include the first date since we don't have a delta between first date and it's previous date
+    deltas_pd = pd.DataFrame(deltas, index=y_test_pred_comparison.index[1:], columns=features)
+    
+    # Select deltas head and tail
+    maxes = deltas_pd.apply(lambda x: max(x)).sort_values(ascending=False).head(5)
+    mins = deltas_pd.apply(lambda x: min(x)).sort_values(ascending=True).head(5)
+    z = maxes.index.to_list() + mins.index.to_list()
+    z = list(set(z))
+    
+    # Plot those wells which has the highest or lowest delta contributions
+    f, ax = plt.subplots(1, 1, figsize=(10,6), dpi=300)
+    ax.set_xlabel("Dates of Testing Data")
+    ax.set_ylabel("Contribution Deltas")
+    ax.plot(deltas_pd[z], label=z)
+    ax.set_title('Deltas of Sample Sums Across Time Using Wells With Highest and Lowest Deltas')
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.10), ncol=6)
+    
+    f.savefig(f'{directoryName}DeltasSumHighestLowest.jpg', bbox_inches='tight')
+
+plot_deltas(deltas, y_test_pred_comparison, features)
+
+#%% Aggregate Values Across Time Steps
 def agg_contributions(shap_values, features, deltas=None, agg_method='sum'):
     if agg_method == 'mean_mag':
         # Mean of magnitudes without direction
