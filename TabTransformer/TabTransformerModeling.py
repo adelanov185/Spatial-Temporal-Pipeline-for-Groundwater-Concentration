@@ -10,7 +10,7 @@ import argparse
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from tab_transformer_pytorch import TabTransformer
 from early_stopping import EarlyStopping
@@ -130,12 +130,160 @@ dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=batch_siz
 directoryName = '..\\Target_' + specific_well + '\\TabTransformerResults\\'
 os.makedirs(directoryName, exist_ok=True)
 
+# Set to true for inferencing with saved model
+inference = False
+
 #%% Modeling
 continous_features = x_base_scaled.shape[1]
 
-model_iterations = 10
-model_results = []
-for i in range(model_iterations):
+if not inference:
+    model_iterations = 10
+    model_results = []
+    for i in range(model_iterations):
+        model = TabTransformer(
+            categories = (),                        
+            num_continuous = continous_features,    
+            dim = 32,                               
+            dim_out = 1,                            
+            depth = 6,                              
+            heads = 8,                              
+            attn_dropout = 0.1,                     
+            ff_dropout = 0.1,                       
+            mlp_hidden_mults = (4, 2),              
+            mlp_act = nn.Tanh(),                    
+            continuous_mean_std = None              
+        )
+
+        optimizer = Adam(params=model.parameters())
+        batch_number = len(dataloader)
+        num_epochs = 10000
+
+        x_categ = torch.Tensor().to(torch.float32)  # No category values
+        criterion = nn.L1Loss()
+        early_stopping = EarlyStopping(patience=25, verbose=True)
+
+        for epoch in range(num_epochs):
+            running_loss = 0.0
+            for j, (data_batch, target_batch) in enumerate(dataloader):
+                model.train()
+                outputs = model(x_categ, data_batch)
+                optimizer.zero_grad()
+                loss = criterion(outputs, target_batch.reshape((target_batch.shape[0], 1)))
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+            print(f'Epoch {epoch + 1}, Loss: {running_loss / batch_number}')
+
+            running_loss = 0.0
+            for j, (data_batch, target_batch) in enumerate(dataloader_val):
+                model.eval()
+                outputs = model(x_categ, data_batch)
+                loss = criterion(outputs, target_batch.reshape((target_batch.shape[0], 1)))
+                running_loss += loss.item()
+            print(f'Validation at Epoch {epoch + 1}, Loss: {running_loss / batch_number}')
+
+            early_stopping((running_loss / batch_number), model)
+            if early_stopping.early_stop:
+                break
+        print('Finished TabTransformer Training')
+
+        state = torch.load('checkpoint.pt')
+        model.load_state_dict(state)
+        model.eval()
+
+        train_batch_num = y_base.shape[0]//batch_size
+        ser = pd.Series(index=y_base.index, name=specific_well)
+        for j, (data_batch, target_batch) in enumerate(dataloader):
+            outputs = model(x_categ, data_batch)
+            if j == train_batch_num:
+                ser.iloc[(batch_size*j):(batch_size*j)+len(outputs)] = outputs.detach().numpy().reshape(outputs.shape[0])
+            else:
+                ser.iloc[(batch_size*j):(batch_size*(j+1))] = outputs.detach().numpy().reshape(outputs.shape[0])
+        ser.to_csv(directoryName + 'predicted_train.csv')
+
+        val_batch_num = y_val.shape[0]//batch_size
+        val_ser = pd.Series(index=y_val.index, name=specific_well)
+        for j, (data_batch, target_batch) in enumerate(dataloader_val):
+            outputs = model(x_categ, data_batch)
+            if j == val_batch_num:
+                val_ser.iloc[(batch_size*j):(batch_size*j)+len(outputs)] = outputs.detach().numpy().reshape(outputs.shape[0])
+            else:
+                val_ser.iloc[(batch_size*j):(batch_size*(j+1))] = outputs.detach().numpy().reshape(outputs.shape[0])
+        val_ser.to_csv(directoryName + 'predicted_val.csv')
+
+        test_batch_num = y_test.shape[0]//batch_size
+        test_ser = pd.Series(index=y_test.index, name=specific_well)
+        for j, (data_batch, target_batch) in enumerate(dataloader_test):
+            outputs = model(x_categ, data_batch)
+            if j == test_batch_num:
+                test_ser.iloc[(batch_size*j):(batch_size*j)+len(outputs)] = outputs.detach().numpy().reshape(outputs.shape[0])
+            else:
+                test_ser.iloc[(batch_size*j):(batch_size*(j+1))] = outputs.detach().numpy().reshape(outputs.shape[0])
+        test_ser.to_csv(directoryName + 'predicted_test.csv')
+
+        train_comparison = pd.DataFrame(index=y_base.index, columns=['Actual_Value', 'Predicted_Value'])
+        train_comparison['Actual_Value'] = y_base
+        train_comparison['Predicted_Value'] = ser
+        val_comparison = pd.DataFrame(index=y_val.index, columns=['Actual_Value', 'Predicted_Value'])
+        val_comparison['Actual_Value'] = y_val
+        val_comparison['Predicted_Value'] = val_ser
+        test_comparison = pd.DataFrame(index=y_test.index, columns=['Actual_Value', 'Predicted_Value'])
+        test_comparison['Actual_Value'] = y_test
+        test_comparison['Predicted_Value'] = test_ser
+
+        mae = mean_absolute_error(test_comparison['Actual_Value'], test_comparison['Predicted_Value'])
+        mse = mean_squared_error(test_comparison['Actual_Value'], test_comparison['Predicted_Value'])
+        rmse = mean_squared_error(test_comparison['Actual_Value'], test_comparison['Predicted_Value'], squared=False)
+        r2 = r2_score(test_comparison['Actual_Value'], test_comparison['Predicted_Value'])
+
+        model_results.append(
+            (
+                state, 
+                (mse, mae, rmse, r2), 
+                (train_comparison, val_comparison, test_comparison)
+            )
+        )
+
+    #%% Choosing best model instance
+    best_result_index = 0
+    best_metrics = model_results[0][1]
+    for index, results in enumerate(model_results):
+        metrics = results[1]
+        
+        # Grab best model
+        # Decided by majority winner of lowest metrics
+        # best_metrics is player1
+        player1_win_count = 0
+        player2_win_count = 0
+        for i in range(len(best_metrics)):
+            if best_metrics[i] < metrics[i]:
+                player1_win_count += 1
+            else:
+                player2_win_count += 1    
+                
+        # Set a new best model to the winning model
+        if player1_win_count < player2_win_count:  
+            best_result_index = index
+            best_metrics = metrics
+
+    (train_comparison, val_comparison, test_comparison) = model_results[best_result_index][2]
+    (mse, mae, rmse, r2) = model_results[best_result_index][1]
+    state = model_results[best_result_index][0]
+
+    #%% Plotting Prediction Performance
+    plot_prediction(
+        specific_well,
+        train_comparison, val_comparison, test_comparison, 
+        mae, mse, rmse, r2,
+        directoryName, model='TabTransformer'
+    )
+
+    #%% Save best model state
+    torch.save(state, 'checkpoint.pt')
+else:
+    #%% Load best model state
+    state = torch.load('checkpoint.pt')
+
     model = TabTransformer(
         categories = (),                        
         num_continuous = continous_features,    
@@ -150,42 +298,10 @@ for i in range(model_iterations):
         continuous_mean_std = None              
     )
 
-    optimizer = Adam(params=model.parameters())
-    batch_number = len(dataloader)
-    num_epochs = 10000
-
-    x_categ = torch.Tensor().to(torch.float32)  # No category values
-    criterion = nn.L1Loss()
-    early_stopping = EarlyStopping(patience=25, verbose=True)
-
-    for epoch in range(num_epochs):
-        running_loss = 0.0
-        for j, (data_batch, target_batch) in enumerate(dataloader):
-            model.train()
-            outputs = model(x_categ, data_batch)
-            optimizer.zero_grad()
-            loss = criterion(outputs, target_batch.reshape((target_batch.shape[0], 1)))
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        print(f'Epoch {epoch + 1}, Loss: {running_loss / batch_number}')
-
-        running_loss = 0.0
-        for j, (data_batch, target_batch) in enumerate(dataloader_val):
-            model.eval()
-            outputs = model(x_categ, data_batch)
-            loss = criterion(outputs, target_batch.reshape((target_batch.shape[0], 1)))
-            running_loss += loss.item()
-        print(f'Validation at Epoch {epoch + 1}, Loss: {running_loss / batch_number}')
-
-        early_stopping((running_loss / batch_number), model)
-        if early_stopping.early_stop:
-            break
-    print('Finished TabTransformer Training')
-
-    state = torch.load('checkpoint.pt')
     model.load_state_dict(state)
     model.eval()
+
+    x_categ = torch.Tensor().to(torch.float32) 
 
     train_batch_num = y_base.shape[0]//batch_size
     ser = pd.Series(index=y_base.index, name=specific_well)
@@ -230,49 +346,12 @@ for i in range(model_iterations):
     mae = mean_absolute_error(test_comparison['Actual_Value'], test_comparison['Predicted_Value'])
     mse = mean_squared_error(test_comparison['Actual_Value'], test_comparison['Predicted_Value'])
     rmse = mean_squared_error(test_comparison['Actual_Value'], test_comparison['Predicted_Value'], squared=False)
+    r2 = r2_score(test_comparison['Actual_Value'], test_comparison['Predicted_Value'])
 
-    model_results.append(
-        (
-            state, 
-            (mse, mae, rmse), 
-            (train_comparison, val_comparison, test_comparison)
-        )
+    plot_prediction(
+        specific_well,
+        train_comparison, val_comparison, test_comparison, 
+        mae, mse, rmse, r2,
+        directoryName, model='TabTransformer'
     )
-
-#%% Choosing best model instance
-best_result_index = 0
-best_metrics = model_results[0][1]
-for index, results in enumerate(model_results):
-    metrics = results[1]
-    
-    # Grab best model
-    # Decided by majority winner of lowest metrics
-    # best_metrics is player1
-    player1_win_count = 0
-    player2_win_count = 0
-    for i in range(len(best_metrics)):
-        if best_metrics[i] < metrics[i]:
-            player1_win_count += 1
-        else:
-            player2_win_count += 1    
-            
-    # Set a new best model to the winning model
-    if player1_win_count < player2_win_count:  
-        best_result_index = index
-        best_metrics = metrics
-
-(train_comparison, val_comparison, test_comparison) = model_results[best_result_index][2]
-(mse, mae, rmse) = model_results[best_result_index][1]
-state = model_results[best_result_index][0]
-
-#%% Plotting Prediction Performance
-plot_prediction(
-    specific_well,
-    train_comparison, val_comparison, test_comparison, 
-    mae, mse, rmse,
-    directoryName, model='TabTransformer'
-)
-
-#%% Save best model state
-torch.save(state, 'checkpoint.pt')
-
+    # %%

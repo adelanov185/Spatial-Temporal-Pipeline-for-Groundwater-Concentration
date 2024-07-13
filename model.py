@@ -12,7 +12,9 @@ from tensorflow.keras.layers import LSTM, Dense, Flatten, Conv1D, MaxPooling1D
 from tensorflow.keras.optimizers import Adam
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+from scipy.interpolate import interp1d
 
 def LSTM_Model(x_base, x_test, y_raw, y_test, shuffle=True, model_iter=10):
     #%% Split
@@ -130,11 +132,12 @@ def LSTM_Model(x_base, x_test, y_raw, y_test, shuffle=True, model_iter=10):
         mae = mean_absolute_error(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'])
         mse = mean_squared_error(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'])
         rmse = mean_squared_error(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'], squared=False)
-        
+        r2 = r2_score(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'])
+
         model_results.append(
             (
                 model, 
-                (mse, mae, rmse), 
+                (mse, mae, rmse, r2), 
                 (y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison),
                 (x_train, x_test, None)
             )
@@ -162,13 +165,13 @@ def LSTM_Model(x_base, x_test, y_raw, y_test, shuffle=True, model_iter=10):
             best_metrics = metrics
        
     (y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison) = model_results[best_result_index][2]
-    (mse, mae, rmse) = model_results[best_result_index][1]
+    (mse, mae, rmse, r2) = model_results[best_result_index][1]
     (x_train, x_test, None), model_results[best_result_index][3]
     model = model_results[best_result_index][0]
 
     return (
         (y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison), 
-        (mse, mae, rmse), 
+        (mse, mae, rmse, r2), 
         (x_train, x_test, None), 
         model
     )
@@ -287,11 +290,12 @@ def CNN_Model(x_base, x_test, y_raw, y_test, shuffle=True, model_iter=10):
         mae = mean_absolute_error(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'])
         mse = mean_squared_error(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'])
         rmse = mean_squared_error(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'], squared=False)
-        
+        r2 = r2_score(y_test_pred_comparison['Actual_Value'], y_test_pred_comparison['Predicted_Value'])
+
         model_results.append(
             (
                 model, 
-                (mse, mae, rmse), 
+                (mse, mae, rmse, r2), 
                 (y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison),
                 (x_train, x_test, None)
             )
@@ -319,13 +323,13 @@ def CNN_Model(x_base, x_test, y_raw, y_test, shuffle=True, model_iter=10):
             best_metrics = metrics
  
     (y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison) = model_results[best_result_index][2]
-    (mse, mae, rmse) = model_results[best_result_index][1]
+    (mse, mae, rmse, r2) = model_results[best_result_index][1]
     (x_train, x_test, None), model_results[best_result_index][3]
     model = model_results[best_result_index][0]
         
     return (
         (y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison), 
-        (mse, mae, rmse), 
+        (mse, mae, rmse, r2), 
         (x_train, x_test, None), 
         model
     )
@@ -338,6 +342,7 @@ def plot_prediction(
         mae,
         mse,
         rmse,
+        r2,
         directoryName,
         model='Model'
 ):
@@ -351,7 +356,7 @@ def plot_prediction(
     plt.legend()
     plt.title(specific_well + ": " + model + " On Training")
     plt.xlabel("Dates of Training Data")
-    plt.ylabel("Cr(VI) Concentration")
+    plt.ylabel("Cr(VI) µg/L")
     plt.savefig(directoryName + specific_well + "_" + model + "Train.png")
     plt.show()
     
@@ -363,10 +368,11 @@ def plot_prediction(
         specific_well + ": " + model + " On Testing," + 
         " MAE: " + str(np.round(mae,3)) + 
         " MSE: " + str(np.round(mse,3)) +
-        " RMSE: " + str(np.round(rmse,3))
+        " RMSE: " + str(np.round(rmse,3)) + 
+        " R2: " + str(np.round(r2,3))
     )
     plt.xlabel("Dates of Testing Data")
-    plt.ylabel("Cr(VI) Concentration")
+    plt.ylabel("Cr(VI) µg/L")
     
     plt.savefig(directoryName + specific_well + "_" + model + "Test.png")
     plt.show()
@@ -390,9 +396,9 @@ def plot_links(
     
     # Initial plot with aquifers and center wells
     if not seperate_table:
-        f, (ax, ax_table) = plt.subplots(2, 1, figsize=(12,10), dpi=100, gridspec_kw={'height_ratios': [2,1]})
+        f, (ax, ax_table) = plt.subplots(2, 1, figsize=(12,10), dpi=500, gridspec_kw={'height_ratios': [2,1]})
     else: 
-        f, ax = plt.subplots(figsize=(8,6), dpi=100)
+        f, ax = plt.subplots(figsize=(8,6), dpi=500)
 
     ax.set_ylabel('Northing', fontsize=20) 
     ax.set_xlabel('Easting', fontsize=20)
@@ -403,7 +409,27 @@ def plot_links(
     
     aqtX = aquifer['X']
     aqtY = aquifer['Y']
-    ax.scatter(aqtX, aqtY, color='r', marker='*', s=142)
+    # ax.scatter(aqtX, aqtY, color='r', marker='*', s=142)
+
+    unique_data = dict(zip(aqtX, aqtY))
+    aqtX_unique = list(unique_data.keys())
+    aqtY_unique = list(unique_data.values())
+    aqtX_unique.append(-13305000)
+    aqtY_unique.append(5896500)
+    aqtX_unique.append(-13304500)
+    aqtY_unique.append(5897000)
+
+    #ax.scatter(aqtX_unique, aqtY_unique, color='r', marker='*', s=142)
+
+    # Create an interpolation function
+    interp_func = interp1d(aqtX_unique, aqtY_unique, kind='linear')
+
+    # Generate new X values for a smooth line
+    x_smooth = np.linspace(min(aqtX), max(aqtX), 500)
+    y_smooth = interp_func(x_smooth)
+
+    # Draw a smooth line connecting the points
+    ax.plot(x_smooth, y_smooth, color='y', alpha=.5)
     
     ax.scatter(CenterX, CenterY, color='g')
     
@@ -467,7 +493,7 @@ def plot_links(
     
     #%% Annotate top 5 impacts on each direction
     if seperate_table:
-        f_table, ax_table = plt.subplots(1, 1, figsize=(8,2), dpi=100)
+        f_table, ax_table = plt.subplots(1, 1, figsize=(8,2), dpi=500)
     
     take = 5
     head = modeled_wells.head(take).reset_index(drop=True)
@@ -525,7 +551,7 @@ def plot_links(
     ax.set_title(title)
         
     #%% Objective Arrow Direction
-    if True:
+    if False:
         # Define the coordinates of the surrounding points
         points = modeled_wells[['X', 'Y']].to_numpy()
         

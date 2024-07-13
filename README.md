@@ -11,7 +11,11 @@ The data used in in the input folder of this repository and is taken from the PH
 The data downloaded was specifically filtered for wells within the 100-HR-D Area at the Hanford site.
 
 This repository comes with results on the target well 199-D5-127, but the script will automatically create new directories under the target well's name used at runtime.
-There, contribution and prediction results are saved.
+There, explanation and prediction results are saved.
+
+To generate predictions using TabTransformer, navigate to the TabTransformer directory and call the TabTransformerModeling.py script with the same arguements instead.
+
+For DA-LSTM modeling and attention extration, navigate to the DA-LSTM directory and call the DA-LSTM_Modeling.py script the same arguements instead. In that same directory, running inference.py with the same arguements performs prediction from the saved model checkpoint, and useAttention.py (again, run with the same arguments) generates various plots for the analysis of wells via use of attentions.
 
 Environment Requirements:
 

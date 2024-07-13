@@ -32,6 +32,7 @@ def plot_prediction(
         mae,
         mse,
         rmse,
+        r2, 
         directoryName,
         model='Model'
 ):
@@ -57,7 +58,8 @@ def plot_prediction(
         specific_well + ": " + model + " On Testing," + 
         " MAE: " + str(np.round(mae,3)) + 
         " MSE: " + str(np.round(mse,3)) +
-        " RMSE: " + str(np.round(rmse,3))
+        " RMSE: " + str(np.round(rmse,3)) +
+        " R2: " + str(np.round(r2,3))
     )
     plt.xlabel("Dates of Testing Data")
     plt.ylabel("Cr(VI) Concentration")

@@ -33,9 +33,9 @@ date2 = parsed.end
 specific_well = parsed.target
 
 # If interative python is preferred:
-# date1 = '2015-01-01'
-# date2 = '2019-12-31'
-# specific_well = '199-D5-127'
+date1 = '2015-01-01'
+date2 = '2019-12-31'
+specific_well = '199-D5-127'
 
 #%% Read and process inputs
 def data_interpolation(available_data, start, end, rollingWindow=45, feature='Concentration'):
@@ -127,24 +127,24 @@ def DLModeling(shuffle, base_df, test_df, y_base, y_test, directoryName, model_i
     # This is the code to generate LSTM NN results.
     lstm_comparisons, lstm_metrics, scaled_data, LSTM_model = LSTM_Model(base_df, test_df, y_base, y_test, shuffle=shuffle, model_iter=model_iter)
     y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison = lstm_comparisons
-    lstm_mse, lstm_mae, lstm_rmse = lstm_metrics
+    lstm_mse, lstm_mae, lstm_rmse, lstm_r2 = lstm_metrics
     lstm_x_train_scaled, lstm_x_test_scaled, lstm_x_scaler = scaled_data
     plot_prediction(
         y_raw.name, 
         y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison, 
-        lstm_mae, lstm_mse, lstm_rmse,
+        lstm_mae, lstm_mse, lstm_rmse, lstm_r2,
         directoryName, model='LSTM'
     )
      
     # This is the code to generate CNN NN results
     cnn_comparisons, cnn_metrics, scaled_data, CNN_model = CNN_Model(base_df, test_df, y_base, y_test, shuffle=shuffle, model_iter=model_iter)
     y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison = cnn_comparisons
-    cnn_mse, cnn_mae, cnn_rmse = cnn_metrics
+    cnn_mse, cnn_mae, cnn_rmse, cnn_r2 = cnn_metrics
     cnn_x_train_scaled, cnn_x_test_scaled, cnn_x_scaler = scaled_data
     plot_prediction(
         y_raw.name,
         y_train_pred_comparison, y_val_pred_comparison, y_test_pred_comparison,
-        cnn_mse, cnn_mae, cnn_rmse,
+        cnn_mse, cnn_mae, cnn_rmse, cnn_r2,
         directoryName, model='CNN'
     )
     
@@ -174,21 +174,38 @@ def DLModeling(shuffle, base_df, test_df, y_base, y_test, directoryName, model_i
         'main': (model, DL_model_name, x_train_scaled, x_test_scaled, x_scaler),
         'LSTM': (
             LSTM_model, # [0]
-            lstm_mse, lstm_mae, lstm_rmse, # [1-3]
-            lstm_x_train_scaled, lstm_x_test_scaled, lstm_x_scaler, # [4-6]
-            lstm_comparisons # [7]
+            lstm_mse, lstm_mae, lstm_rmse, lstm_r2, # [1-4]
+            lstm_x_train_scaled, lstm_x_test_scaled, lstm_x_scaler, # [5-7]
+            lstm_comparisons # [8]
         ),
         'CNN': (
             CNN_model,  # [0]
-            cnn_mse, cnn_mae, cnn_rmse, # [1-3]
-            cnn_x_train_scaled, cnn_x_test_scaled, cnn_x_scaler, # [4-6]
-            cnn_comparisons # [7]
+            cnn_mse, cnn_mae, cnn_rmse, cnn_r2, # [1-4]
+            cnn_x_train_scaled, cnn_x_test_scaled, cnn_x_scaler, # [5-7]
+            cnn_comparisons # [8]
         )
     }
 
 ret = DLModeling(shuffle, x_base_scaled_pd, x_test_scaled_pd, y_base, y_test, directoryName, model_iter=10)
 model, DL_model_name, x_train_scaled, x_test_scaled, x_scaler = ret['main']
-y_test_pred_comparison = ret[DL_model_name][7][2]['Predicted_Value']
+y_test_pred_comparison = ret[DL_model_name][8][2]['Predicted_Value']
+
+#%% Comparing Label Ranges and Statistics
+# Timestep amount is truncated from original testing labels for comparison
+table_data = pd.DataFrame(data=[y_test.iloc[10:].describe().iloc[1:], y_test_pred_comparison.describe().iloc[1:]])
+table_data = table_data.reset_index()
+table_data = table_data.rename(columns={'index': ' '})
+table_data.iloc[0,0] = 'Original'
+table_data.iloc[1,0] = 'Prediction'
+
+fig, ax = plt.subplots(figsize=(10,1))
+table = ax.table(
+    cellText=table_data.round(decimals=3).values, colLabels=table_data.columns,
+    loc='center', cellLoc='center'
+)
+table.auto_set_font_size(False)  
+ax.axis('off')
+fig.savefig(f'{directoryName}ori_vs_pred_stats.jpg', bbox_inches='tight')
 
 #%% SHAP Explanations
 def shapXAI(model, x_train_scaled, x_test_scaled, assertation=True):
