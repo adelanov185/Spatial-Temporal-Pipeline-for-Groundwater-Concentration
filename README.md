@@ -17,6 +17,8 @@ To generate predictions using TabTransformer, navigate to the TabTransformer dir
 
 For DA-LSTM modeling and attention extration, navigate to the DA-LSTM directory and call the DA-LSTM_Modeling.py script the same arguements instead. In that same directory, running inference.py with the same arguements performs prediction from the saved model checkpoint, and useAttention.py (again, run with the same arguments) generates various plots for the analysis of wells via use of attentions.
 
+To generate predictions using TabTransformer, navigate to the TabTransformer directory and call the TabTransformerModeling.py script instead.
+
 Environment Requirements:
 
 The scripts are confirmed running on a 64 bit windows machine with a Tesla T4 GPU and Python 3.10.6.
